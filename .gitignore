@@ -1,4 +1,5 @@
 *.json
+*.csv
 docs/
 *-env
 .DS_Store
