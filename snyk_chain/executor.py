@@ -41,7 +41,9 @@ class SnykExecutor:
         return "/rest" in path or path.startswith("/orgs") or path.startswith("/groups") or path.startswith("/tenants") or path.startswith("/custom")
 
     def _add_version_param(self, params: dict, path: str) -> dict:
-        """Add version param for REST endpoints."""
+        """Add version param for REST endpoints. Skip if path already has query params (e.g. pagination next link)."""
+        if "?" in path:
+            return params or {}
         if self._is_rest_path(path):
             p = dict(params or {})
             if "version" not in p:
