@@ -1,0 +1,29 @@
+# Minimal V1 API spec for endpoints not yet available in Snyk REST API.
+# V1 is in maintenance/sunset mode. This covers the ignores endpoint.
+openapi: 3.0.3
+info:
+  title: Snyk V1 API (partial)
+  version: 1.0.0
+servers:
+  - url: https://api.snyk.io
+paths:
+  /v1/org/{org_id}/project/{project_id}/ignores:
+    get:
+      operationId: get_project_ignores_v1
+      summary: Get ignore rules for a project
+      parameters:
+        - name: org_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Map of issue_id to list of ignore rules
