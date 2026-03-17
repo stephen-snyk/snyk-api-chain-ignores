@@ -24,7 +24,15 @@ A CLI that exposes every Snyk REST and V1 API endpoint, with automatic parameter
    # or: pip install -r requirements.txt
    ```
 
-3. **Configure authentication:**
+3. **Snyk SCA scan** (run after installing dependencies):
+   ```bash
+   pip install -r requirements.txt   # or: pip install -e .
+   snyk test --file=requirements.txt --package-manager=pip
+   # or, if using setup.py: snyk test --file=setup.py
+   ```
+   **IDE plugin:** If the Snyk VS Code/Cursor extension reports "Required packages missing", add `--command=.venv/bin/python` to the extension's "Additional parameters" (Settings → Snyk → Scan configuration). This points Snyk at the project venv where dependencies are installed.
+
+4. **Configure authentication:**
    - Set `SNYK_TOKEN` env var, or
    - Create `~/.snyk-chain.toml`:
      ```toml
@@ -54,6 +62,9 @@ snyk-chain call listOrgs --output json
 
 # Call GET /orgs/{org_id}/projects with org resolved from /orgs
 snyk-chain call listProjects --org-id <uuid> --output json
+
+# Get full SBOM document (default: cyclonedx1.6+json)
+snyk-chain call getSbom --org-id <org_uuid> --project-id <project_uuid> --sbom-format cyclonedx1.6+json --output json
 
 # Non-interactive: fail if params missing
 snyk-chain ignores --group-id <uuid> --non-interactive --output csv

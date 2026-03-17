@@ -14,6 +14,8 @@ ENV_VAR_MAP: dict[str, str] = {
     "org_id": "SNYK_ORG_ID",
     "group_id": "SNYK_GROUP_ID",
     "project_id": "SNYK_PROJECT_ID",
+    "tenant_id": "SNYK_TENANT_ID",
+    "install_id": "SNYK_INSTALL_ID",
     "api_version": "SNYK_API_VERSION",
     "base_url": "SNYK_API_BASE_URL",
 }

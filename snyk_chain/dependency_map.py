@@ -43,14 +43,25 @@ V1_PARAM_SOURCE_ALIAS: dict[str, str] = {
     "project_id": "project_id",  # same - both use org_id from /orgs, project from /orgs/{org_id}/projects
 }
 
+# Path-context overrides for broker endpoints
+# Broker install_id comes from /tenants/{tenant_id}/brokers/deployments (attributes.install_id)
+BROKER_INSTALL_SOURCE = ("/tenants/{tenant_id}/brokers/deployments", "GET", "data[].attributes.install_id")
+
+
+def _is_broker_installs_path(path: str) -> bool:
+    """True if path is under /tenants/.../brokers/installs/ (Universal Broker)."""
+    return "/tenants/" in path and "/brokers/installs/" in path
+
 
 def get_path_params(path: str) -> list[str]:
     """Extract {param_name} from a path string."""
     return re.findall(r"\{(\w+)\}", path)
 
 
-def get_param_dependencies(param: str) -> list[str]:
+def get_param_dependencies(param: str, target_path: str | None = None) -> list[str]:
     """Return params that must be resolved before this param can be fetched."""
+    if target_path and param == "install_id" and _is_broker_installs_path(target_path):
+        return ["tenant_id"]
     entry = PARAM_SOURCE_MAP.get(param)
     if not entry:
         return []
@@ -58,19 +69,26 @@ def get_param_dependencies(param: str) -> list[str]:
     return get_path_params(source_path)
 
 
-def get_param_source(param: str, api: str = "rest") -> tuple[str, str, str] | None:
+def get_param_source(
+    param: str,
+    api: str = "rest",
+    target_path: str | None = None,
+) -> tuple[str, str, str] | None:
     """
     Return (source_path, method, response_path) for a param, or None if not resolvable.
-    source_path uses REST-style paths (e.g. /orgs, /orgs/{org_id}/projects).
+    For broker paths (/tenants/.../brokers/installs/), install_id is fetched from
+    /tenants/{tenant_id}/brokers/deployments -> attributes.install_id.
     """
     if param in NON_RESOLVABLE_PARAMS:
         return None
+    if target_path and param == "install_id" and _is_broker_installs_path(target_path):
+        return BROKER_INSTALL_SOURCE
     if api == "v1" and param in V1_PARAM_SOURCE_ALIAS:
         param = V1_PARAM_SOURCE_ALIAS[param]
     return PARAM_SOURCE_MAP.get(param)
 
 
-def build_resolution_order(params: list[str]) -> list[str]:
+def build_resolution_order(params: list[str], target_path: str | None = None) -> list[str]:
     """
     Return params in resolution order (dependencies first).
     E.g. [project_id, org_id] -> [org_id, project_id].
@@ -81,13 +99,16 @@ def build_resolution_order(params: list[str]) -> list[str]:
     def add_with_deps(p: str) -> None:
         if p in seen:
             return
-        for dep in get_param_dependencies(p):
+        for dep in get_param_dependencies(p, target_path):
             if dep in params and dep not in seen:
                 add_with_deps(dep)
         order.append(p)
         seen.add(p)
 
     for p in params:
-        if get_param_source(p) or p in NON_RESOLVABLE_PARAMS:
+        has_source = get_param_source(p, target_path=target_path) is not None
+        is_non_resolvable = p in NON_RESOLVABLE_PARAMS
+        is_broker_install = p == "install_id" and target_path and _is_broker_installs_path(target_path)
+        if has_source or is_non_resolvable or is_broker_install:
             add_with_deps(p)
     return order

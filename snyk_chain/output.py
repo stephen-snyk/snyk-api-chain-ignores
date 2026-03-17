@@ -5,6 +5,7 @@ Output formatters: JSON and CSV (flattened from JSON:API structure).
 from __future__ import annotations
 
 import csv
+import io
 import json
 import sys
 from typing import Any
@@ -61,13 +62,13 @@ def to_csv(data: list[dict], fieldnames: list[str] | None = None) -> str:
                 all_keys.update(row.keys())
         fieldnames = sorted(all_keys)
 
-    buf: list[str] = []
+    buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     for row in data:
         if isinstance(row, dict):
             writer.writerow(row)
-    return "\n".join(buf)
+    return buf.getvalue()
 
 
 def write_output(data: Any, fmt: str, file=None) -> None:

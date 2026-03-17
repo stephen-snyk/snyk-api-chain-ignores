@@ -11,16 +11,28 @@ import sys
 from pathlib import Path
 
 import click
+import requests
 
 from .config import get_defaults, get_param, get_output_format
 from .dependency_map import (
     build_resolution_order,
     get_param_source,
     get_path_params,
+    _is_broker_installs_path,
 )
 from .executor import SnykExecutor
 from .output import flatten_ignores_response, write_output
 from .spec_loader import load_all_specs
+
+SBOM_FORMAT_CHOICES = [
+    "cyclonedx1.6+json",
+    "cyclonedx1.6+xml",
+    "cyclonedx1.5+json",
+    "cyclonedx1.5+xml",
+    "cyclonedx1.4+json",
+    "cyclonedx1.4+xml",
+    "spdx2.3+json",
+]
 
 
 def _op_id_to_slug(op_id: str) -> str:
@@ -38,9 +50,29 @@ def _resolve_path(path: str, params: dict[str, str]) -> str:
 
 
 def _extract_ids_from_data(response_path: str, data: list) -> list[dict]:
-    """Extract id (+ name) from data using response_path like 'data[].id'."""
+    """Extract id (+ name) from data using response_path like 'data[].id' or 'data[].attributes.install_id'."""
     if not data:
         return []
+    
+    # Handle attributes.install_id (broker deployments -> install_id)
+    if "attributes.install_id" in response_path:
+        seen: set[str] = set()
+        results: list[dict] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            attrs = item.get("attributes") or {}
+            install_id = attrs.get("install_id")
+            if install_id and install_id not in seen:
+                seen.add(install_id)
+                results.append({
+                    "id": install_id,
+                    "name": install_id,
+                    "attributes": attrs,
+                })
+        return results
+    
+    # Standard: extract id from each item
     if "data[]" in response_path or "data[].id" in response_path:
         return [
             {
@@ -183,9 +215,28 @@ def list_operations(no_cache):
 @click.option("--org-id", default=None)
 @click.option("--group-id", default=None)
 @click.option("--project-id", default=None)
+@click.option("--tenant-id", default=None)
+@click.option("--install-id", default=None)
+@click.option(
+    "--sbom-format",
+    type=click.Choice(SBOM_FORMAT_CHOICES),
+    default=None,
+    help="SBOM format for getSbom operation.",
+)
 @click.option("--no-cache", is_flag=True, help="Skip REST spec cache")
 @click.pass_context
-def call(ctx, operation_id, output_fmt, org_id, group_id, project_id, no_cache):
+def call(
+    ctx,
+    operation_id,
+    output_fmt,
+    org_id,
+    group_id,
+    project_id,
+    tenant_id,
+    install_id,
+    sbom_format,
+    no_cache,
+):
     """
     Call any Snyk API operation by operation ID.
     Missing params are resolved from prior endpoints or prompted (unless --non-interactive).
@@ -213,21 +264,31 @@ def call(ctx, operation_id, output_fmt, org_id, group_id, project_id, no_cache):
     path = op["path"]
     api = op.get("api", "rest")
     required_params = get_path_params(path)
-    order = build_resolution_order(required_params)
+    order = build_resolution_order(required_params, target_path=path)
 
     resolved: dict[str, str] = {}
     resolved["org_id"] = org_id or defaults.get("org_id") or ""
     resolved["group_id"] = group_id or defaults.get("group_id") or ""
     resolved["project_id"] = project_id or defaults.get("project_id") or ""
+    resolved["tenant_id"] = tenant_id or defaults.get("tenant_id") or ""
+    resolved["install_id"] = install_id or defaults.get("install_id") or ""
 
     for param in order:
         if resolved.get(param):
             continue
-        source = get_param_source(param, api)
+        source = get_param_source(param, api, target_path=path)
         if not source:
+            is_broker_install = param == "install_id" and _is_broker_installs_path(path)
             if ctx.obj["non_interactive"]:
-                click.echo(f"Error: {param} required and cannot be resolved", err=True)
+                click.echo(f"Error: {param} required and cannot be resolved.", err=True)
+                if is_broker_install:
+                    click.echo(
+                        "  For Broker endpoints: install_id must be a Universal Broker install ID from the Snyk Broker app.",
+                        err=True,
+                    )
                 sys.exit(1)
+            if is_broker_install:
+                click.echo("\nNote: install_id for Broker endpoints must come from the Snyk Broker app (not Snyk Apps).")
             val = click.prompt(f"{param}")
             resolved[param] = val or ""
             continue
@@ -236,7 +297,9 @@ def call(ctx, operation_id, output_fmt, org_id, group_id, project_id, no_cache):
         dep_params = get_path_params(source_path)
         for dep in dep_params:
             if not resolved.get(dep):
-                click.echo(f"Error: Cannot resolve {param} without {dep}", err=True)
+                env_name = {"org_id": "SNYK_ORG_ID", "group_id": "SNYK_GROUP_ID", "project_id": "SNYK_PROJECT_ID", "tenant_id": "SNYK_TENANT_ID", "install_id": "SNYK_INSTALL_ID"}.get(dep, dep.upper())
+                click.echo(f"Error: Cannot resolve {param} without {dep}.", err=True)
+                click.echo(f"  Provide {dep} via: --{dep.replace('_', '-')} <uuid>, {env_name} env var, or {dep} in .snyk-chain.toml [defaults]", err=True)
                 sys.exit(1)
         source_path = _resolve_path(source_path, resolved)
 
@@ -270,12 +333,34 @@ def call(ctx, operation_id, output_fmt, org_id, group_id, project_id, no_cache):
         click.echo(f"Error: Unresolved path params in {final_path}", err=True)
         sys.exit(1)
 
-    resp_data = executor.get_paginated(final_path, params={"limit": 100}, api=api)
-    if not resp_data:
-        resp_data = executor.get_single_page(final_path, api=api)
+    is_get_sbom = op.get("operation_id") == "getSbom"
+    request_params: dict[str, str] = {}
+    if is_get_sbom:
+        chosen_format = sbom_format or "cyclonedx1.6+json"
+        request_params["format"] = chosen_format
+
+    try:
+        if is_get_sbom:
+            # SBOM endpoint returns a single document and requires format for full content.
+            resp_data = executor.get_single_page(final_path, params=request_params, api=api)
+        else:
+            resp_data = executor.get_paginated(final_path, params={"limit": 100}, api=api)
+            if not resp_data:
+                resp_data = executor.get_single_page(final_path, api=api)
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404 and _is_broker_installs_path(path):
+            click.echo("Error: 404 Not Found.", err=True)
+            click.echo(
+                "  For Broker endpoints: install_id must be a Universal Broker install ID from the Snyk Broker app, "
+                "not from Snyk Apps. The tenant may also not have Broker configured.",
+                err=True,
+            )
+            click.echo("  Try --api-version 2025-11-05 if using a newer Broker API.", err=True)
+            sys.exit(1)
+        raise
 
     fmt = output_fmt or get_output_format(defaults)
-    write_output(resp_data if isinstance(resp_data, list) else [resp_data], fmt)
+    write_output(resp_data, fmt)
 
 
 def main():
