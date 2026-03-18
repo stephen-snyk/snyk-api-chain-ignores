@@ -1,6 +1,6 @@
 ## Snyk API Chain
 
-A CLI that exposes every Snyk REST and V1 API endpoint, with automatic parameter resolution. When an endpoint needs `org_id` or `project_id`, the tool fetches available options from prior API calls and prompts you to select—or uses env vars, config file, or CLI flags when already set.
+Snyk API Chain is an **API tool chain** a CLI that exposes every Snyk REST and V1 API endpoint, with automatic parameter resolution. When an endpoint needs `org_id` or `project_id`, the tool fetches available options from prior API calls and prompts you to select—or uses env vars, config file, or CLI flags when already set.
 
 ### Features
 
@@ -24,15 +24,7 @@ A CLI that exposes every Snyk REST and V1 API endpoint, with automatic parameter
    # or: pip install -r requirements.txt
    ```
 
-3. **Snyk SCA scan** (run after installing dependencies):
-   ```bash
-   pip install -r requirements.txt   # or: pip install -e .
-   snyk test --file=requirements.txt --package-manager=pip
-   # or, if using setup.py: snyk test --file=setup.py
-   ```
-   **IDE plugin:** If the Snyk VS Code/Cursor extension reports "Required packages missing", add `--command=.venv/bin/python` to the extension's "Additional parameters" (Settings → Snyk → Scan configuration). This points Snyk at the project venv where dependencies are installed.
-
-4. **Configure authentication:**
+3. **Configure authentication:**
    - Set `SNYK_TOKEN` env var, or
    - Create `~/.snyk-chain.toml`:
      ```toml
@@ -42,6 +34,26 @@ A CLI that exposes every Snyk REST and V1 API endpoint, with automatic parameter
      api_version = "2024-10-15"
      base_url = "https://api.snyk.io"
      ```
+
+4. **Set tenant, group, and org (optional):** If you use the same org/group/tenant often, set them once so the CLI doesn’t prompt you:
+   - **Environment variables:** `SNYK_ORG_ID`, `SNYK_GROUP_ID`, `SNYK_TENANT_ID`
+   - **Config file** (add under `[defaults]` in `~/.snyk-chain.toml` or `./.snyk-chain.toml`):
+     ```toml
+     [defaults]
+     org_id = "your-org-uuid"
+     group_id = "your-group-uuid"
+     tenant_id = "your-tenant-uuid"
+     ```
+   - **CLI flags:** `--org-id`, `--group-id`, `--tenant-id` on any command
+
+   Values are resolved in order: env vars → config → flags → interactive prompt.
+
+5. **Update REST API version (optional):** The default REST API version is `2024-10-15`. To use a newer version, no extra commands are needed—just set the version. The spec is fetched from `https://api.snyk.io/rest/openapi/{version}` and cached per version.
+   - **Config file** (in `[defaults]`): `api_version = "2025-11-05"`
+   - **Environment variable:** `SNYK_API_VERSION=2025-11-05`
+   - **CLI flag:** `--api-version 2025-11-05` on any command
+
+   Version is resolved in the same order: env vars → config → flags.
 
 ### Commands
 

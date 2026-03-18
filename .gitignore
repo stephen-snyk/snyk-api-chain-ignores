@@ -1,4 +1,5 @@
 *.json
+*snyk-chain.toml
 *.csv
 docs/
 .venv/
