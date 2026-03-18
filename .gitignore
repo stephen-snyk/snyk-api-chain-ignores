@@ -1,6 +1,12 @@
 *.json
+*snyk-chain.toml
 *.csv
 docs/
+.venv/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
 *-env
 .DS_Store
 .DS_Store?

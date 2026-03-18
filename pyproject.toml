@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snyk-chain"
+version = "0.1.0"
+description = "Snyk API Chain CLI - call any Snyk endpoint with automatic param resolution"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.28.0",
+    "click>=8.0.0",
+    "toml>=0.10.2",
+    "PyYAML>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.scripts]
+snyk-chain = "snyk_chain.cli:main"
