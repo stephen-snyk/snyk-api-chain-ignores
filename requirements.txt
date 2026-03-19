@@ -1,0 +1,4 @@
+requests>=2.28.0
+click>=8.0.0
+toml>=0.10.2
+PyYAML>=6.0
