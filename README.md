@@ -21,7 +21,6 @@ Snyk API Chain is an **API tool chain** a CLI that exposes every Snyk REST and V
 2. **Install:**
    ```bash
    pip install -e .
-   # or: pip install -r requirements.txt
    ```
 
 3. **Configure authentication:**
@@ -93,7 +92,8 @@ snyk-chain ignores --output csv
 ### Project structure
 
 ```
-cli.py           # Click entry point
+setup.py        # Snyk SCA target; deps in pyproject.toml
+cli.py          # Click entry point
 spec_loader.py   # Fetches REST spec, loads V1 spec, caches by version
 dependency_map.py # Maps param names → source endpoints for auto-resolution
 config.py        # env → config file → flags → interactive prompt
